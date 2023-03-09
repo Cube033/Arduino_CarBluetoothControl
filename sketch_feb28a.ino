@@ -1,5 +1,5 @@
 #include <SoftwareSerial.h>
-const int avgBase = 10;
+const int avgBase = 100;
 
 const int in1 = 2;
 const int in2 = 3;
@@ -12,15 +12,21 @@ const int trigPin = 9;
 const int echoPin = 8;
 
 String commandName = "";
+int commandCode = 0;
 
 bool cruiseControlOn = false;
-bool ccGoBack = false; 
+bool ccGoBack = false;
 
 bool availableNewAvgDistance = false;
 
 int avgIterationNumb = 0;
 int avgSumm = 0;
 int avgDistance = 0;
+
+unsigned long stopTime = 0;
+const long actionInterval = 1500;
+
+int currentAction = 0;
 
 void setup() {
   pinMode(in1, OUTPUT);
@@ -43,56 +49,82 @@ void setup() {
 
 void loop() {
 
+  //reading command from iOS app
   if (Serial.available()) {
-    commandName = Serial.readString();  // читаем очередной символ из буфера
-    Serial.println(commandName);
-    newCommand();
+    //commandName = Serial.readString();
+    commandCode = Serial.read();
+    if (commandCode != 0) {
+      Serial.println("commandCode " + String(commandCode));
+    }
+    //Serial.println(commandName);
+    performAction(commandCode);
   }
-  commandName = "";
+  //commandName = "";
 
+  //distance
   int ultraSonicDistance = getDistance();
   calculateAvgDistance(ultraSonicDistance);
 
+  //handling cruise control
   if (cruiseControlOn == true && availableNewAvgDistance == true) {
     availableNewAvgDistance = false;
     ccAction();
   }
+
+  //checking end of action
+  unsigned long currentTime = millis();
+  if (currentTime >= stopTime && cruiseControlOn == false) {
+    stop();
+  }
 }
 
-void newCommand() {
-  if (commandName == "forward") {
-    stepForward();
+void performAction(int action) {
+  stopTime = millis() + actionInterval;
+  if (action == currentAction) {
+    return;  //already performing
+  } else {
+    currentAction = action;
   }
-  if (commandName == "back") {
-    stepBack();
-  }
-  if (commandName == "leftForward") {
-    stepLeftForward();
-  }
-  if (commandName == "rightForward") {
-    stepRightForward();
-  }
-  if (commandName == "leftBack") {
-    stepLeftBack();
-  }
-  if (commandName == "rightBack") {
-    stepRightBack();
-  }
-  if (commandName == "cruiseControl") {
-    cruiseControlOn = !cruiseControlOn;
-    if (cruiseControlOn) {
-      Serial.println("Cruise control ON");
-    } else {
-      Serial.println("Cruise control OFF");
-    }
-  }
-  if (commandName == "ccGoBack") {
-    ccGoBack = !ccGoBack;
-    if (ccGoBack) {
-      Serial.println("Auto turn ON");
-    } else {
-      Serial.println("Auto turn OFF");
-    }
+  switch (action) {
+    case 0:  //Stop:
+      //stop();
+      break;
+    case 1:  //GoForward:
+      goForward();
+      break;
+    case 2:  //GoBack:
+      goBack();
+      break;
+    case 3:  //GoForwardLeft:
+      goLeftForward();
+      break;
+    case 4:  //GoForwardRight:
+      goRightForward();
+      break;
+    case 5:  //GoBackLeft:
+      goLeftBack();
+      break;
+    case 6:  //GoBackRight:
+      goRightBack();
+      break;
+    case 7:  //cruiseControlOn
+      cruiseControlOn = !cruiseControlOn;
+      if (cruiseControlOn) {
+        Serial.println("Cruise control ON");
+      } else {
+        Serial.println("Cruise control OFF");
+      }
+      currentAction = 0;
+      break;
+    case 8:  // ccGoBack
+      ccGoBack = !ccGoBack;
+      if (ccGoBack) {
+        Serial.println("Auto turn ON");
+      } else {
+        Serial.println("Auto turn OFF");
+      }
+      currentAction = 0;
+      break;
   }
 }
 
@@ -121,56 +153,43 @@ void calculateAvgDistance(int ultraSonicDistance) {
     avgDistance = avgSumm / avgBase;
     avgIterationNumb = 0;
     avgSumm = 0;
-    Serial.print(avgDistance);
+    Serial.print(String(avgDistance));
     availableNewAvgDistance = true;
   }
 }
 
 void ccAction() {
-  if (avgDistance > 100) {
+  if (avgDistance > 60) {
     Serial.println("Go forward");
-    stepForward();
+    goForward();
   } else {
     stop();
     Serial.println("Stop");
-    delay(1000);
     if (ccGoBack) {
-      stepLeftBack();
+      goLeftBack();
       Serial.println("Turn around");
     }
   }
 }
 
-void stepForward() {
+void goLeftForward() {
+  turnLeft();
   goForward();
-  delay(1000);
-  stop();
 }
 
-void stepBack() {
+void goRightForward() {
+  turnRight();
+  goForward();
+}
+
+void goLeftBack() {
+  turnLeft();
   goBack();
-  delay(1000);
-  stop();
 }
 
-void stepLeftForward() {
-  turnLeft();
-  stepForward();
-}
-
-void stepRightForward() {
+void goRightBack() {
   turnRight();
-  stepForward();
-}
-
-void stepLeftBack() {
-  turnLeft();
-  stepBack();
-}
-
-void stepRightBack() {
-  turnRight();
-  stepBack();
+  goBack();
 }
 
 void goForward() {
